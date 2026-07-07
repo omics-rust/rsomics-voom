@@ -26,8 +26,10 @@ column. The design is intercept-only (one mean per gene), matching
    standard deviation (`sigma`, residual df `= n - 1`).
 3. The mean-variance trend is `sqrt(sigma)` against
    `Amean + mean(log2(lib.size + 1)) - log2(1e6)`, with all-zero-count genes
-   dropped, smoothed by Cleveland LOWESS. The span is voom's adaptive choice
-   `min(0.3 + 0.7 * (50/ngenes)^(1/3), 1)`.
+   dropped, smoothed by Cleveland LOWESS. The span defaults to `0.5`
+   (`voom()`'s default); `--span <f>` sets a fixed span, and `--adaptive-span`
+   selects it from the gene count as `min(0.3 + 0.7 * (50/ngenes)^(1/3), 1)`
+   (`voom(adaptive.span = TRUE)`), overriding `--span`.
 4. Each observation's fitted log2-count is read off the smoothed trend (linear
    interpolation, endpoint-clamped) to give its predicted standard deviation;
    the weight is the inverse fourth power.
@@ -47,9 +49,12 @@ This crate is an independent Rust reimplementation of limma's `voom` based on:
 No source code from the GPL upstream was used as reference during
 implementation. Test fixtures are independently generated.
 
-Output is verified value-exact (relative deviation < 1e-6) against limma 3.66
-voom on the 4090 oracle across several matrix shapes; the committed golden in
-`tests/golden/` lets CI validate without an R install.
+Output is verified value-exact (relative deviation < 1e-6) against limma 3.62.1
+voom across several matrix shapes: the default matches `voom(counts, design)`
+(fixed span 0.5) and `--adaptive-span` matches `voom(counts, design,
+adaptive.span = TRUE)`. The committed goldens in `tests/golden/` — including a
+constant-gene degenerate matrix where the two spans diverge 73% — let CI
+validate without an R install.
 
 License: MIT OR Apache-2.0.
 Upstream credit: limma <https://bioconductor.org/packages/limma/> (GPL >= 2).

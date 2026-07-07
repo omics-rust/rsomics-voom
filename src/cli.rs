@@ -4,7 +4,7 @@ use clap::Parser;
 use rsomics_common::{CommonFlags, Result, RsomicsError, Tool, ToolMeta};
 use rsomics_help::{Example, FlagSpec, HelpSpec, Origin, Section};
 
-use rsomics_voom::{read_matrix, voom, write_matrix};
+use rsomics_voom::{SpanChoice, read_matrix, voom, write_matrix};
 
 pub const META: ToolMeta = ToolMeta {
     name: env!("CARGO_PKG_NAME"),
@@ -21,6 +21,13 @@ pub struct Cli {
     /// Precision-weights matrix destination. Omit to emit only E.
     #[arg(short = 'w', long)]
     weights: Option<PathBuf>,
+    /// Fixed LOWESS span for the mean-variance trend (limma voom `span`).
+    #[arg(long, default_value_t = 0.5)]
+    span: f64,
+    /// Choose the span adaptively from the gene count (limma voom
+    /// `adaptive.span = TRUE`); overrides --span.
+    #[arg(long, default_value_t = false)]
+    adaptive_span: bool,
     #[command(flatten)]
     pub common: CommonFlags,
 }
@@ -35,7 +42,12 @@ impl Tool for Cli {
 
     fn execute(self) -> Result<()> {
         let m = read_matrix(&self.counts)?;
-        let v = voom(&m)?;
+        let span = if self.adaptive_span {
+            SpanChoice::Adaptive
+        } else {
+            SpanChoice::Fixed(self.span)
+        };
+        let v = voom(&m, span)?;
 
         let mut e_out: Box<dyn std::io::Write> = if self.output == "-" {
             Box::new(std::io::stdout().lock())
@@ -95,6 +107,29 @@ pub static HELP: HelpSpec = HelpSpec {
                 required: false,
                 default: None,
                 description: "Precision-weights matrix destination; omit to emit only E.",
+                why_default: None,
+            },
+            FlagSpec {
+                short: None,
+                long: "span",
+                aliases: &[],
+                value: Some("<f>"),
+                type_hint: Some("f64"),
+                required: false,
+                default: Some("0.5"),
+                description: "Fixed LOWESS span for the mean-variance trend (limma voom span).",
+                why_default: Some("limma voom()'s default span."),
+            },
+            FlagSpec {
+                short: None,
+                long: "adaptive-span",
+                aliases: &[],
+                value: None,
+                type_hint: Some("bool"),
+                required: false,
+                default: None,
+                description: "Choose the span adaptively from the gene count \
+                    (limma voom adaptive.span=TRUE); overrides --span.",
                 why_default: None,
             },
         ],

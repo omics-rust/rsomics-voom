@@ -66,12 +66,17 @@ fn assert_close(ours: &Matrix, theirs: &Matrix, label: &str) {
     eprintln!("{label}: max relative deviation = {max_rel:e}");
 }
 
-fn run_ours(counts: &PathBuf) -> (String, String) {
+fn run_ours(counts: &PathBuf, extra: &[&str]) -> (String, String) {
     let scratch = std::env::temp_dir();
-    let wpath = scratch.join(format!("voom_w_{}.tsv", std::process::id()));
+    let wpath = scratch.join(format!(
+        "voom_w_{}_{}.tsv",
+        std::process::id(),
+        extra.join("_").replace(['-', '.'], "")
+    ));
     let out = Command::new(ours())
         .arg(counts)
         .args(["-w", wpath.to_str().unwrap()])
+        .args(extra)
         .output()
         .unwrap();
     assert!(
@@ -85,13 +90,46 @@ fn run_ours(counts: &PathBuf) -> (String, String) {
     (e, w)
 }
 
+/// Default `voom(counts, design)` is `span = 0.5, adaptive.span = FALSE`; the
+/// weights golden here was captured from that call, so a passing diff pins the
+/// default to limma's default rather than the adaptive-span mode.
 #[test]
 fn golden_diff_e_and_weights() {
-    let (e, w) = run_ours(&golden("counts.tsv"));
+    let (e, w) = run_ours(&golden("counts.tsv"), &[]);
     let e_exp = std::fs::read_to_string(golden("E.expected.tsv")).unwrap();
     let w_exp = std::fs::read_to_string(golden("weights.expected.tsv")).unwrap();
     assert_close(&parse(&e), &parse(&e_exp), "E (golden)");
     assert_close(&parse(&w), &parse(&w_exp), "weights (golden)");
+}
+
+/// `--adaptive-span` must reproduce `voom(counts, adaptive.span = TRUE)`; on
+/// this 120-gene matrix that span (0.82) diverges 13% from the default.
+#[test]
+fn golden_diff_adaptive_span() {
+    let (_e, w) = run_ours(&golden("counts.tsv"), &["--adaptive-span"]);
+    let w_exp = std::fs::read_to_string(golden("weights.adaptive.expected.tsv")).unwrap();
+    assert_close(&parse(&w), &parse(&w_exp), "weights (adaptive golden)");
+}
+
+/// Degenerate fixture: zero-variance (constant) genes plus an all-zero gene.
+/// With only 24 genes the adaptive span saturates to 1.0, so the default and
+/// adaptive weights differ by 73% — the divergence that let the span-default
+/// bug ship unnoticed. Both branches are pinned against limma here.
+#[test]
+fn golden_diff_constant_genes() {
+    let (e, w) = run_ours(&golden("counts_const.tsv"), &[]);
+    let e_exp = std::fs::read_to_string(golden("E_const.expected.tsv")).unwrap();
+    let w_exp = std::fs::read_to_string(golden("weights_const.expected.tsv")).unwrap();
+    assert_close(&parse(&e), &parse(&e_exp), "E const (golden)");
+    assert_close(&parse(&w), &parse(&w_exp), "weights const default (golden)");
+
+    let (_e2, w2) = run_ours(&golden("counts_const.tsv"), &["--adaptive-span"]);
+    let w2_exp = std::fs::read_to_string(golden("weights_const.adaptive.expected.tsv")).unwrap();
+    assert_close(
+        &parse(&w2),
+        &parse(&w2_exp),
+        "weights const adaptive (golden)",
+    );
 }
 
 fn rscript_available() -> bool {
@@ -125,7 +163,7 @@ fn live_r_matches_ours() {
         String::from_utf8_lossy(&oracle.stderr)
     );
 
-    let (e, w) = run_ours(&golden("counts.tsv"));
+    let (e, w) = run_ours(&golden("counts.tsv"), &[]);
     let e_ref = std::fs::read_to_string(&e_r).unwrap();
     let w_ref = std::fs::read_to_string(&w_r).unwrap();
     let _ = std::fs::remove_file(&e_r);

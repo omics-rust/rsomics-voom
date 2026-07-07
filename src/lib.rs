@@ -19,6 +19,31 @@ fn lowess_span(n: usize) -> f64 {
     (0.3 + 0.7 * (50.0 / n as f64).powf(1.0 / 3.0)).min(1.0)
 }
 
+/// LOWESS span selection, mirroring limma `voom`'s `span` / `adaptive.span`
+/// arguments. Default is a fixed span of 0.5 (`voom(counts, design)`);
+/// `Adaptive` reproduces `voom(..., adaptive.span = TRUE)` and ignores any
+/// fixed span, matching limma's precedence.
+#[derive(Clone, Copy, Debug)]
+pub enum SpanChoice {
+    Fixed(f64),
+    Adaptive,
+}
+
+impl Default for SpanChoice {
+    fn default() -> Self {
+        SpanChoice::Fixed(0.5)
+    }
+}
+
+impl SpanChoice {
+    fn resolve(self, n_genes: usize) -> f64 {
+        match self {
+            SpanChoice::Fixed(f) => f,
+            SpanChoice::Adaptive => lowess_span(n_genes),
+        }
+    }
+}
+
 pub struct CountMatrix {
     pub header: String,
     pub genes: Vec<String>,
@@ -96,7 +121,7 @@ pub struct Voom {
     pub weights: Vec<Vec<f64>>,
 }
 
-pub fn voom(m: &CountMatrix) -> Result<Voom> {
+pub fn voom(m: &CountMatrix, span: SpanChoice) -> Result<Voom> {
     let n = m.samples;
     let ng = m.genes.len();
     if n < 2 {
@@ -154,7 +179,7 @@ pub fn voom(m: &CountMatrix) -> Result<Voom> {
         ));
     }
 
-    let (lx, ly) = lowess_sorted(&sx, &sy, lowess_span(ng));
+    let (lx, ly) = lowess_sorted(&sx, &sy, span.resolve(ng));
 
     // weight = 1 / trend(fitted.logcount)^4, with
     // fitted.logcount = Amean[gene] + log2(1e-6 * (lib.size[sample] + 1))
@@ -221,7 +246,7 @@ mod tests {
             samples: 2,
             counts: vec![vec![10.0, 20.0], vec![30.0, 40.0]],
         };
-        let v = voom(&m).unwrap();
+        let v = voom(&m, SpanChoice::default()).unwrap();
         let lib0 = 40.0;
         let expect = ((10.0 + 0.5) / (lib0 + 1.0) * 1e6_f64).log2();
         assert!((v.e[0][0] - expect).abs() < 1e-12);

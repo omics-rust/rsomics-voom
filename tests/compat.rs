@@ -7,6 +7,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 const EPS: f64 = 1e-6; // relative
 
@@ -67,11 +68,12 @@ fn assert_close(ours: &Matrix, theirs: &Matrix, label: &str) {
 }
 
 fn run_ours(counts: &PathBuf, extra: &[&str]) -> (String, String) {
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let scratch = std::env::temp_dir();
     let wpath = scratch.join(format!(
         "voom_w_{}_{}.tsv",
         std::process::id(),
-        extra.join("_").replace(['-', '.'], "")
+        COUNTER.fetch_add(1, Ordering::Relaxed)
     ));
     let out = Command::new(ours())
         .arg(counts)

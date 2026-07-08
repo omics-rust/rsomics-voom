@@ -91,9 +91,9 @@ pub fn read_matrix(path: &Path) -> Result<CountMatrix> {
                 row.len()
             )));
         }
-        if row.iter().any(|&c| c < 0.0) {
+        if let Some(&c) = row.iter().find(|&&c| c < 0.0 || !c.is_finite()) {
             return Err(RsomicsError::InvalidInput(format!(
-                "negative count in gene '{gene}'"
+                "invalid count '{c}' in gene '{gene}': counts must be finite and non-negative"
             )));
         }
         genes.push(gene.to_string());

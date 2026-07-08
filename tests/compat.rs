@@ -173,3 +173,32 @@ fn live_r_matches_ours() {
     assert_close(&parse(&e), &parse(&e_ref), "E (live R)");
     assert_close(&parse(&w), &parse(&w_ref), "weights (live R)");
 }
+
+/// A non-finite (NaN/Inf) count is malformed input; limma's `DGEList` rejects it
+/// ("NA counts not allowed"). The reader must fail loud, not let NaN reach the
+/// lowess sort where a `partial_cmp` unwrap would panic.
+#[test]
+fn nonfinite_count_rejected() {
+    static N: AtomicU64 = AtomicU64::new(0);
+    let dir = std::env::temp_dir();
+    for bad in ["nan", "inf"] {
+        let p = dir.join(format!(
+            "voom_bad_{}_{}_{bad}.tsv",
+            std::process::id(),
+            N.fetch_add(1, Ordering::Relaxed)
+        ));
+        std::fs::write(
+            &p,
+            format!("gene\tS1\tS2\tS3\tS4\ng1\t4\t7\t{bad}\t11\ng2\t9\t3\t6\t8\n"),
+        )
+        .unwrap();
+        let out = Command::new(ours()).arg(&p).output().unwrap();
+        let _ = std::fs::remove_file(&p);
+        assert!(!out.status.success(), "{bad}: expected non-zero exit");
+        let err = String::from_utf8_lossy(&out.stderr);
+        assert!(
+            err.contains("finite"),
+            "{bad}: stderr should mention finite, got: {err}"
+        );
+    }
+}

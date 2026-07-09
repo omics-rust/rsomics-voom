@@ -1,6 +1,6 @@
 [package]
 name = "rsomics-voom"
-version = "0.1.2"
+version = "0.1.3"
 description = "voom log2-CPM transform with mean-variance precision weights for RNA-seq count matrices — a Rust reimplementation of limma's voom"
 edition = "2024"
 rust-version = "1.91"
